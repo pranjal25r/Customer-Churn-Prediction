@@ -2,102 +2,36 @@
 
 ## Project Overview
 
-Customer churn is one of the biggest challenges faced by SaaS companies. This project aims to **predict whether a customer will churn or not** using machine learning techniques and provide actionable insights to improve customer retention.
+Customer churn is one of the biggest challenges faced by SaaS companies. This project predicts whether a customer will churn using machine learning, and identifies the key drivers behind churn to enable data-driven retention strategies.
 
-This project demonstrates an end-to-end data science workflow including:
-
-* Data preprocessing
-* Exploratory Data Analysis (EDA)
-* Feature engineering
-* Model building & evaluation
-* Business insights
-
----
-
-## Objective
-
-The main goal of this project is to:
-
-* Predict customer churn using historical data
-* Identify key factors influencing churn
-* Help businesses take **proactive retention actions**
+The project covers an end-to-end, reproducible ML workflow:
+- Data cleaning and preprocessing
+- Exploratory Data Analysis (EDA)
+- Feature engineering (encoding, scaling)
+- Model training and comparison (Random Forest, XGBoost)
+- Class imbalance handling via SMOTE
+- Model evaluation with business-relevant metrics
+- Batch and single-customer prediction
 
 ---
 
 ## Dataset
 
-* Dataset used: **Telco Customer Churn Dataset**
-* Contains customer information such as:
-
-  * Demographics
-  * Subscription details
-  * Payment methods
-  * Tenure
-  * Churn status (Target Variable)
+- **Source:** Telco Customer Churn Dataset (Kaggle)
+- **Size:** 7,043 customers, 19 features after preprocessing
+- **Class distribution:** 73.5% non-churn / 26.5% churn (imbalanced)
+- **Features:** demographics, subscription details, payment methods, tenure, billing
 
 ---
 
 ## Tech Stack
 
-* **Programming Language:** Python 🐍
-* **Libraries Used:**
-
-  * Pandas
-  * NumPy
-  * Matplotlib
-  * Seaborn
-  * Scikit-learn
+- **Language:** Python
+- **Libraries:** pandas, NumPy, scikit-learn, XGBoost, imbalanced-learn, matplotlib, seaborn, joblib
 
 ---
 
-## Project Workflow
-
-### 1️⃣ Data Cleaning
-
-* Handling missing values
-* Converting data types
-* Removing inconsistencies
-
-### 2️⃣ Exploratory Data Analysis (EDA)
-
-* Univariate & Bivariate analysis
-* Churn distribution visualization
-* Feature correlation analysis
-
-### 3️⃣ Feature Engineering
-
-* Encoding categorical variables
-* Scaling numerical features
-* Feature selection
-
-### 4️⃣ Model Building
-
-Models used:
-
-* Logistic Regression
-* Decision Tree
-* Random Forest
-* (Optional) XGBoost
-
-### 5️⃣ Model Evaluation
-
-* Accuracy
-* Precision, Recall, F1-score
-* ROC-AUC Score
-* Confusion Matrix
-
----
-
-## 📈 Key Insights
-
-* Customers with **short tenure** are more likely to churn
-* **High monthly charges** increase churn probability
-* Customers without **long-term contracts** tend to leave more
-* **Payment method & service type** significantly impact churn
-
----
-
-## 📦 Project Structure
+## Project Structure
 
 ```
 Customer-Churn-Prediction/
@@ -106,99 +40,116 @@ Customer-Churn-Prediction/
 │   └── Telco-Customer-Churn.csv
 │
 ├── notebooks/
-│   └── EDA_and_Model.ipynb
+│   └── EDA.ipynb                  # Exploratory data analysis
 │
 ├── src/
-│   ├── data_preprocessing.py
-│   ├── feature_engineering.py
-│   ├── model_training.py
+│   ├── data_processing.py         # Cleaning, encoding, scaling, train/test split
+│   ├── train_model.py             # Training pipeline (RF, RF+SMOTE, XGBoost)
+│   └── predict.py                 # Single & batch prediction utilities
 │
+├── models/
+│   ├── churn_model.pkl            # Best trained model + preprocessing artifacts
+│   └── feature_importance_*.png   # Feature importance plot for best model
+│
+├── dashboard/
+│   └── app.py                     # Prediction dashboard
+│
+├── test_prediction.py
 ├── requirements.txt
-├── README.md
-└── app/ (optional dashboard)
+└── README.md
 ```
 
 ---
 
-## ⚙️ Installation & Setup
+## Installation & Setup
 
 ### 1. Clone the repository
-
 ```bash
 git clone https://github.com/pranjal25r/Customer-Churn-Prediction.git
 cd Customer-Churn-Prediction
 ```
 
-### 2. Create virtual environment
-
+### 2. Create a virtual environment
 ```bash
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate   # Linux/Mac
 venv\Scripts\activate      # Windows
 ```
 
 ### 3. Install dependencies
-
 ```bash
 pip install -r requirements.txt
 ```
 
 ---
 
-## ▶️ Usage
+## Usage
 
-Run the notebook:
-
+### Train the model
 ```bash
-jupyter notebook
+PYTHONPATH=. python src/train_model.py
+```
+This trains Random Forest, Random Forest + SMOTE, and XGBoost, evaluates all three on a held-out test set, and saves the best model (selected by F1-score) to `models/churn_model.pkl`.
+
+### Explore the data
+```bash
+jupyter notebook notebooks/EDA.ipynb
 ```
 
-Or run scripts:
+### Make predictions
+```python
+from src.predict import predict_customer
 
-```bash
-python src/model_training.py
+result = predict_customer({
+    "gender": "Female", "SeniorCitizen": 0, "Partner": "Yes", "Dependents": "No",
+    "tenure": 1, "PhoneService": "No", "MultipleLines": "No phone service",
+    "InternetService": "DSL", "OnlineSecurity": "No", "OnlineBackup": "Yes",
+    "DeviceProtection": "No", "TechSupport": "No", "StreamingTV": "No",
+    "StreamingMovies": "No", "Contract": "Month-to-month", "PaperlessBilling": "Yes",
+    "PaymentMethod": "Electronic check", "MonthlyCharges": 29.85, "TotalCharges": 29.85
+})
 ```
 
 ---
 
-## 📊 Results
+## Results
 
-* Achieved strong performance in predicting churn
-* Identified **high-risk customer segments**
-* Model can be used for **real-time churn prediction systems**
+The dataset is imbalanced (73.5% non-churn vs 26.5% churn). Accuracy alone is misleading here, since a model can score ~74% by always predicting "no churn." Three models were trained and compared on a held-out test set:
 
----
+| Model | Accuracy | Precision | Recall | F1-score | ROC-AUC |
+|---|---|---|---|---|---|
+| Random Forest (baseline) | 80.2% | 66.2% | 51.9% | 0.582 | 0.840 |
+| **Random Forest + SMOTE (selected)** | 76.2% | 53.7% | **75.9%** | **0.629** | 0.837 |
+| XGBoost | 80.1% | 65.6% | 52.4% | 0.582 | 0.836 |
 
-## 💡 Future Improvements
+**Random Forest + SMOTE** was selected as the best model. SMOTE oversamples the minority (churn) class during training, which raises churn-class recall from 52% to 76% — a ~46% relative improvement — at the cost of some accuracy and precision. For a churn-prediction use case, this is the right trade-off: missing an at-risk customer (false negative) is more costly to the business than flagging a customer who doesn't actually churn (false positive).
 
-* Deploy model using Flask / FastAPI
-* Build interactive dashboard (Streamlit)
-* Handle class imbalance using SMOTE
-* Hyperparameter tuning
-* Use deep learning models
-
----
-
-## 📌 Business Impact
-
-This project helps SaaS companies:
-
-* Reduce customer churn
-* Improve retention strategies
-* Increase revenue
-* Understand customer behavior
+**Key churn drivers** (from feature importance):
+- Contract type (month-to-month contracts churn far more than annual/two-year)
+- Tenure (newer customers churn more)
+- Payment method (electronic check correlates with higher churn)
+- Monthly charges
 
 ---
 
-## 🤝 Contributing
+## Business Impact
 
-Contributions are welcome! Feel free to fork the repo and submit a pull request.
+- Identifies high-risk customer segments for proactive retention outreach
+- Prioritizes recall over raw accuracy, aligned with the real cost of missing a churner
+- Provides interpretable feature importance to guide retention strategy, not just predictions
+
+---
+
+## Future Improvements
+
+- Hyperparameter tuning (grid/random search, Optuna)
+- Deploy as a REST API (FastAPI/Flask)
+- Threshold tuning based on business cost of false positives vs false negatives
+- Experiment with deep learning approaches on larger datasets
 
 ---
 
-## 🙌 Acknowledgements
+## Acknowledgements
 
-* Kaggle for dataset
-* Open-source ML community
-
----
+- Kaggle for the Telco Customer Churn dataset
+- Open-source ML community
