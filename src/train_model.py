@@ -35,6 +35,13 @@ except ImportError:
     XGBOOST_AVAILABLE = False
     logging.warning("XGBoost not installed. Only RandomForest will be trained.")
 
+try:
+    from imblearn.over_sampling import SMOTE
+    SMOTE_AVAILABLE = True
+except ImportError:
+    SMOTE_AVAILABLE = False
+    logging.warning("imbalanced-learn not installed. SMOTE oversampling disabled.")
+
 from src.data_processing import get_processed_data
 
 
@@ -76,7 +83,8 @@ def get_models() -> Dict[str, Any]:
         Dictionary mapping model names to model instances.
     """
     models = {
-        'random_forest': RandomForestClassifier(**MODEL_CONFIGS['random_forest'])
+        'random_forest': RandomForestClassifier(**MODEL_CONFIGS['random_forest']),
+        'random_forest_smote': RandomForestClassifier(**MODEL_CONFIGS['random_forest']),
     }
 
     if XGBOOST_AVAILABLE:
@@ -85,6 +93,36 @@ def get_models() -> Dict[str, Any]:
         logger.warning("XGBoost not available, skipping...")
 
     return models
+
+
+def apply_smote(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    random_state: int = 42
+) -> Tuple[pd.DataFrame, pd.Series]:
+    """
+    Oversample the minority (churn) class using SMOTE so the model
+    doesn't optimize purely for the majority class.
+
+    Args:
+        X_train: Training features.
+        y_train: Training labels.
+        random_state: Random seed for reproducibility.
+
+    Returns:
+        Tuple of (resampled X_train, resampled y_train).
+    """
+    if not SMOTE_AVAILABLE:
+        logger.warning("SMOTE unavailable, returning original training data.")
+        return X_train, y_train
+
+    smote = SMOTE(random_state=random_state)
+    X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+    logger.info(
+        f"SMOTE resampling: {y_train.value_counts().to_dict()} -> "
+        f"{pd.Series(y_resampled).value_counts().to_dict()}"
+    )
+    return X_resampled, y_resampled
 
 
 def evaluate_model(
@@ -174,8 +212,15 @@ def train_and_evaluate_all(
     trained_models = {}
     all_metrics = {}
 
+    X_train_smote, y_train_smote = apply_smote(X_train, y_train)
+
     for name, model in models.items():
-        trained_model = train_model(model, X_train, y_train, name)
+        if name == 'random_forest_smote':
+            trained_model = train_model(model, X_train_smote, y_train_smote, name)
+        else:
+            trained_model = train_model(model, X_train, y_train, name)
+
+        # Always evaluate on the original, untouched test set
         metrics = evaluate_model(trained_model, X_test, y_test, name)
 
         trained_models[name] = trained_model
