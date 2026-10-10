@@ -317,11 +317,15 @@ if submit:
 						<strong>Risk Level:</strong> {risk_level}
 					</p>
 					<p style="margin: 6px 0 0 0; font-size: 14px; color: {text_color};">
-						<strong>Churn Probability:</strong> {churn_probability:.2%}
+						<strong>Churn risk score:</strong> {churn_probability:.2%}
 					</p>
 				</div>
 				""",
 				unsafe_allow_html=True,
+			)
+			st.caption(
+				"Higher means more likely to leave; use it for ranking customers, "
+				"not as an exact probability."
 			)
 
 			# Display contextual message
