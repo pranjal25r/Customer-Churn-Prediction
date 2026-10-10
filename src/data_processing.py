@@ -1,17 +1,20 @@
 """
-Data processing module for Customer Churn Prediction.
+Data processing for Customer Churn Prediction.
 
-This module provides functions for loading, cleaning, and preprocessing
-the Telco Customer Churn dataset for machine learning models.
+Loads and cleans the Telco Customer Churn dataset and builds the
+preprocessing step that is shared by training and prediction.
 """
 
-import pandas as pd
-import numpy as np
 from pathlib import Path
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from typing import Tuple, Optional
+from typing import Tuple
 
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+
+DATA_PATH = Path(__file__).parent.parent / 'data' / 'Telco-Customer-Churn.csv'
 
 # Column definitions
 CATEGORICAL_COLS = [
@@ -23,12 +26,20 @@ CATEGORICAL_COLS = [
 
 NUMERICAL_COLS = ['tenure', 'MonthlyCharges', 'TotalCharges']
 
+# Already 0/1 in the raw data, so it is passed through unchanged.
+PASSTHROUGH_COLS = ['SeniorCitizen']
+
+FEATURE_COLS = CATEGORICAL_COLS + NUMERICAL_COLS + PASSTHROUGH_COLS
+
 TARGET_COL = 'Churn'
 
 DROP_COLS = ['customerID']
 
+TEST_SIZE = 0.2
+RANDOM_STATE = 42
 
-def load_data(filepath: str) -> pd.DataFrame:
+
+def load_data(filepath: str = str(DATA_PATH)) -> pd.DataFrame:
     """
     Load the raw dataset from CSV file.
 
@@ -39,6 +50,25 @@ def load_data(filepath: str) -> pd.DataFrame:
         DataFrame containing the raw data.
     """
     return pd.read_csv(filepath)
+
+
+def check_blank_total_charges(df: pd.DataFrame) -> dict:
+    """
+    Count rows where TotalCharges is blank and check they all have tenure = 0.
+
+    Args:
+        df: Raw DataFrame.
+
+    Returns:
+        Dictionary with the blank row count and the tenure check result.
+    """
+    blank = pd.to_numeric(df['TotalCharges'], errors='coerce').isna()
+    return {
+        'blank_total_charges_rows': int(blank.sum()),
+        'blank_rows_with_tenure_0': int((df.loc[blank, 'tenure'] == 0).sum()),
+        'all_blank_rows_have_tenure_0': bool((df.loc[blank, 'tenure'] == 0).all()),
+        'tenure_0_rows_total': int((df['tenure'] == 0).sum())
+    }
 
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -57,149 +87,59 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     cols_to_drop = [col for col in DROP_COLS if col in df.columns]
     df = df.drop(columns=cols_to_drop)
 
-    # Fix TotalCharges datatype (contains whitespace strings)
-    df['TotalCharges'] = pd.to_numeric(df['TotalCharges'], errors='coerce')
-
-    # Fill missing TotalCharges with median
-    df['TotalCharges'] = df['TotalCharges'].fillna(df['TotalCharges'].median())
+    # TotalCharges is blank for customers with tenure = 0 (nothing billed yet),
+    # so a blank means 0.
+    df['TotalCharges'] = pd.to_numeric(df['TotalCharges'], errors='coerce').fillna(0)
 
     return df
 
 
-def encode_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
+def build_preprocessor() -> ColumnTransformer:
     """
-    Encode categorical features using Label Encoding.
-
-    Args:
-        df: Cleaned DataFrame.
+    Build the preprocessing step: one-hot encode categoricals, scale numerics.
 
     Returns:
-        Tuple of (encoded DataFrame, dict of label encoders).
+        Unfitted ColumnTransformer.
     """
-    df = df.copy()
-    encoders = {}
-
-    for col in CATEGORICAL_COLS:
-        if col in df.columns:
-            le = LabelEncoder()
-            df[col] = le.fit_transform(df[col].astype(str))
-            encoders[col] = le
-
-    # Encode target variable
-    if TARGET_COL in df.columns:
-        le = LabelEncoder()
-        df[TARGET_COL] = le.fit_transform(df[TARGET_COL])
-        encoders[TARGET_COL] = le
-
-    return df, encoders
+    return ColumnTransformer(
+        transformers=[
+            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), CATEGORICAL_COLS),
+            ('num', StandardScaler(), NUMERICAL_COLS),
+            ('flag', 'passthrough', PASSTHROUGH_COLS)
+        ],
+        verbose_feature_names_out=False
+    )
 
 
-def scale_features(
-    X_train: pd.DataFrame,
-    X_test: pd.DataFrame,
-    columns: Optional[list] = None
-) -> Tuple[pd.DataFrame, pd.DataFrame, StandardScaler]:
+def split_data(
+    df: pd.DataFrame,
+    test_size: float = TEST_SIZE,
+    random_state: int = RANDOM_STATE
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """
-    Scale numerical features using StandardScaler.
+    Stratified train/test split of a cleaned DataFrame.
 
     Args:
-        X_train: Training features.
-        X_test: Test features.
-        columns: Columns to scale. If None, scales NUMERICAL_COLS.
-
-    Returns:
-        Tuple of (scaled X_train, scaled X_test, fitted scaler).
-    """
-    if columns is None:
-        columns = [col for col in NUMERICAL_COLS if col in X_train.columns]
-
-    scaler = StandardScaler()
-
-    X_train = X_train.copy()
-    X_test = X_test.copy()
-
-    X_train[columns] = scaler.fit_transform(X_train[columns])
-    X_test[columns] = scaler.transform(X_test[columns])
-
-    return X_train, X_test, scaler
-
-
-def prepare_data(
-    filepath: str,
-    test_size: float = 0.2,
-    random_state: int = 42,
-    scale: bool = True
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, dict]:
-    """
-    Complete data preparation pipeline.
-
-    Args:
-        filepath: Path to the raw CSV file.
+        df: Cleaned DataFrame including the target column.
         test_size: Fraction of data for testing.
         random_state: Random seed for reproducibility.
-        scale: Whether to scale numerical features.
 
     Returns:
-        Tuple of (X_train, X_test, y_train, y_test, artifacts dict).
+        Tuple of (X_train, X_test, y_train, y_test). Target is 1 = churned.
     """
-    # Load and clean
-    df = load_data(filepath)
-    df = clean_data(df)
+    X = df[FEATURE_COLS]
+    y = (df[TARGET_COL] == 'Yes').astype(int)
 
-    # Encode
-    df, encoders = encode_features(df)
-
-    # Split features and target
-    X = df.drop(columns=[TARGET_COL])
-    y = df[TARGET_COL]
-
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
+    return train_test_split(
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
 
-    # Scale if requested
-    scaler = None
-    if scale:
-        X_train, X_test, scaler = scale_features(X_train, X_test)
-
-    artifacts = {
-        'encoders': encoders,
-        'scaler': scaler,
-        'feature_names': list(X.columns)
-    }
-
-    return X_train, X_test, y_train, y_test, artifacts
-
-
-def get_processed_data(
-    data_dir: Optional[str] = None,
-    **kwargs
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, dict]:
-    """
-    Convenience function to load and process data from default location.
-
-    Args:
-        data_dir: Directory containing the data file. If None, uses default.
-        **kwargs: Additional arguments passed to prepare_data.
-
-    Returns:
-        Same as prepare_data.
-    """
-    if data_dir is None:
-        # Default path relative to this file
-        data_dir = Path(__file__).parent.parent / 'data'
-
-    filepath = Path(data_dir) / 'Telco-Customer-Churn.csv'
-
-    return prepare_data(str(filepath), **kwargs)
-
 
 if __name__ == '__main__':
-    # Test the processing pipeline
-    X_train, X_test, y_train, y_test, artifacts = get_processed_data()
+    raw = load_data()
+    print(f"Blank TotalCharges check: {check_blank_total_charges(raw)}")
 
+    X_train, X_test, y_train, y_test = split_data(clean_data(raw))
     print(f"Training set: {X_train.shape}")
     print(f"Test set: {X_test.shape}")
     print(f"Target distribution (train): {y_train.value_counts().to_dict()}")
-    print(f"Features: {artifacts['feature_names']}")

@@ -1,118 +1,60 @@
 """
 Prediction module for Customer Churn Prediction.
 
-This module provides functions for making predictions using a trained model.
+Loads the saved pipeline (preprocessing + model) and makes predictions with it.
 """
 
 import pandas as pd
 import numpy as np
 import joblib
 from pathlib import Path
-from typing import Union, Tuple, Any, Optional
+from typing import Union, Optional
 
-from src.data_processing import clean_data, CATEGORICAL_COLS, NUMERICAL_COLS
+from sklearn.pipeline import Pipeline
+
+from src.data_processing import clean_data, FEATURE_COLS
 
 
-def load_model(filepath: Optional[str] = None) -> Tuple[Any, dict]:
+def load_model(filepath: Optional[str] = None) -> Pipeline:
     """
-    Load a trained model and its artifacts.
+    Load the fitted pipeline saved by train_model.py.
 
     Args:
         filepath: Path to the model file. Uses default if None.
 
     Returns:
-        Tuple of (model, artifacts dict).
+        Fitted pipeline (preprocessing + model).
     """
     if filepath is None:
         filepath = str(Path(__file__).parent.parent / 'models' / 'churn_model.pkl')
 
-    save_object = joblib.load(filepath)
-    return save_object['model'], save_object.get('artifacts', {})
+    return joblib.load(filepath)
 
 
-def preprocess_input(
-    data: Union[pd.DataFrame, dict],
-    artifacts: dict
-) -> pd.DataFrame:
+def prepare_input(data: Union[pd.DataFrame, dict]) -> pd.DataFrame:
     """
-    Preprocess input data for prediction.
+    Turn raw customer data into the columns the pipeline expects.
 
     Args:
         data: Input data as DataFrame or dict.
-        artifacts: Preprocessing artifacts from training.
 
     Returns:
-        Preprocessed DataFrame ready for prediction.
+        Cleaned DataFrame with the feature columns.
     """
     # Convert dict to DataFrame if necessary
     if isinstance(data, dict):
         data = pd.DataFrame([data])
 
-    df = data.copy()
-
-    # Clean the data
-    df = clean_data(df)
-
-    # Encode categorical features
-    encoders = artifacts.get('encoders', {})
-    for col in CATEGORICAL_COLS:
-        if col in df.columns and col in encoders:
-            # Handle unseen categories by using the most frequent encoded value
-            le = encoders[col]
-            df[col] = df[col].astype(str).apply(
-                lambda x: le.transform([x])[0] if x in le.classes_ else 0
-            )
-
-    # Scale numerical features
-    scaler = artifacts.get('scaler')
-    if scaler is not None:
-        scale_cols = [col for col in NUMERICAL_COLS if col in df.columns]
-        df[scale_cols] = scaler.transform(df[scale_cols])
-
-    # Ensure correct feature order
-    feature_names = artifacts.get('feature_names', [])
-    if feature_names:
-        df = df[feature_names]
-
-    return df
+    return clean_data(data)[FEATURE_COLS]
 
 
-def predict(
-    data: Union[pd.DataFrame, dict],
-    model_path: Optional[str] = None
-) -> np.ndarray:
-    """
-    Make churn predictions on new data.
-
-    Args:
-        data: Input data as DataFrame or dict.
-        model_path: Path to the model file.
-
-    Returns:
-        Array of predictions (0 = No Churn, 1 = Churn).
-    """
-    model, artifacts = load_model(model_path)
-    processed_data = preprocess_input(data, artifacts)
-    return model.predict(processed_data)
-
-
-def predict_proba(
-    data: Union[pd.DataFrame, dict],
-    model_path: Optional[str] = None
-) -> np.ndarray:
-    """
-    Get churn probability predictions.
-
-    Args:
-        data: Input data as DataFrame or dict.
-        model_path: Path to the model file.
-
-    Returns:
-        Array of probabilities for churn class.
-    """
-    model, artifacts = load_model(model_path)
-    processed_data = preprocess_input(data, artifacts)
-    return model.predict_proba(processed_data)[:, 1]
+def risk_level(probability: float) -> str:
+    """Map a churn score to 'Low', 'Medium' or 'High'."""
+    if probability >= 0.7:
+        return 'High'
+    if probability >= 0.4:
+        return 'Medium'
+    return 'Low'
 
 
 def predict_customer(
@@ -120,7 +62,7 @@ def predict_customer(
     model_path: Optional[str] = None
 ) -> dict:
     """
-    Make churn prediction for customer(s).
+    Make churn prediction for a single customer.
 
     Args:
         data: Customer data as DataFrame or dictionary.
@@ -129,27 +71,21 @@ def predict_customer(
     Returns:
         Dictionary with:
             - prediction: 0 (No Churn) or 1 (Churn)
-            - probability: Churn probability score (0.0 to 1.0)
+            - probability: Churn score (0.0 to 1.0)
             - churn_label: 'Yes' or 'No'
             - risk_level: 'Low', 'Medium', or 'High'
     """
-    # Load model once
-    model, artifacts = load_model(model_path)
-    processed_data = preprocess_input(data, artifacts)
+    pipeline = load_model(model_path)
+    features = prepare_input(data)
 
-    # Get prediction and probability
-    prediction = model.predict(processed_data)[0]
-    probability = model.predict_proba(processed_data)[0, 1]
+    prediction = pipeline.predict(features)[0]
+    probability = pipeline.predict_proba(features)[0, 1]
 
     return {
         'prediction': int(prediction),
         'probability': float(probability),
         'churn_label': 'Yes' if prediction == 1 else 'No',
-        'risk_level': (
-            'High' if probability >= 0.7 else
-            'Medium' if probability >= 0.4 else
-            'Low'
-        )
+        'risk_level': risk_level(probability)
     }
 
 
@@ -167,23 +103,48 @@ def predict_batch(
     Returns:
         DataFrame with predictions and probabilities added.
     """
-    model, artifacts = load_model(model_path)
-    processed_data = preprocess_input(data, artifacts)
+    pipeline = load_model(model_path)
+    features = prepare_input(data)
 
-    predictions = model.predict(processed_data)
-    probabilities = model.predict_proba(processed_data)[:, 1]
+    predictions = pipeline.predict(features)
+    probabilities = pipeline.predict_proba(features)[:, 1]
 
     result = data.copy()
     result['prediction'] = predictions
     result['probability'] = probabilities
     result['churn_label'] = np.where(predictions == 1, 'Yes', 'No')
-    result['risk_level'] = pd.cut(
-        probabilities,
-        bins=[0, 0.4, 0.7, 1.0],
-        labels=['Low', 'Medium', 'High']
-    )
+    result['risk_level'] = [risk_level(p) for p in probabilities]
 
     return result
+
+
+def top_features(pipeline: Pipeline, top_n: int = 5) -> pd.DataFrame:
+    """
+    List the features the model leans on most.
+
+    Uses absolute coefficients for Logistic Regression and feature importances
+    for tree models. Features are named after one-hot encoding, e.g.
+    'Contract_Month-to-month'.
+
+    Args:
+        pipeline: Fitted pipeline.
+        top_n: Number of features to return.
+
+    Returns:
+        DataFrame with columns 'feature' and 'weight', largest first.
+    """
+    model = pipeline.named_steps['model']
+    feature_names = pipeline.named_steps['preprocess'].get_feature_names_out()
+
+    if hasattr(model, 'coef_'):
+        weights = model.coef_[0]
+    else:
+        weights = model.feature_importances_
+
+    df = pd.DataFrame({'feature': feature_names, 'weight': weights.astype(float)})
+    order = df['weight'].abs().sort_values(ascending=False).index
+
+    return df.loc[order].head(top_n).reset_index(drop=True)
 
 
 if __name__ == '__main__':

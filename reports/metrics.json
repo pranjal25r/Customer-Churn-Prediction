@@ -1,0 +1,102 @@
+{
+  "data": {
+    "rows": 7043,
+    "churners": 1869,
+    "blank_total_charges_rows": 11,
+    "blank_rows_with_tenure_0": 11,
+    "all_blank_rows_have_tenure_0": true,
+    "tenure_0_rows_total": 11
+  },
+  "split": {
+    "test_size": 0.2,
+    "random_state": 42,
+    "stratified": true,
+    "train_rows": 5634,
+    "test_rows": 1409,
+    "train_churners": 1495,
+    "train_non_churners": 4139,
+    "xgboost_scale_pos_weight": 2.768561872909699
+  },
+  "cross_validation": {
+    "folds": 5,
+    "metric": "F1 for the churn class, training set only",
+    "results": {
+      "logistic_regression": {
+        "f1_mean": 0.6280936887329571,
+        "f1_std": 0.023395686389894973,
+        "f1_folds": [
+          0.6525759577278731,
+          0.5891677675033025,
+          0.6175710594315246,
+          0.650571791613723,
+          0.6305818673883626
+        ]
+      },
+      "random_forest": {
+        "f1_mean": 0.625836455268179,
+        "f1_std": 0.019153877132672834,
+        "f1_folds": [
+          0.6325036603221084,
+          0.5885885885885885,
+          0.6296296296296297,
+          0.6430594900849859,
+          0.6354009077155824
+        ]
+      },
+      "xgboost": {
+        "f1_mean": 0.6323356664982378,
+        "f1_std": 0.010588513162650198,
+        "f1_folds": [
+          0.6436781609195402,
+          0.6202898550724638,
+          0.6214689265536724,
+          0.6309859154929578,
+          0.6452554744525547
+        ]
+      },
+      "random_forest_unweighted": {
+        "f1_mean": 0.5837567511184709,
+        "f1_std": 0.018644949984214156,
+        "f1_folds": [
+          0.5719626168224299,
+          0.5634328358208955,
+          0.6173752310536045,
+          0.5777777777777777,
+          0.5882352941176471
+        ]
+      }
+    }
+  },
+  "chosen_model": "xgboost",
+  "before_model": "random_forest_unweighted",
+  "test": {
+    "xgboost": {
+      "accuracy": 0.7579843860894251,
+      "precision": 0.5319148936170213,
+      "recall": 0.7352941176470589,
+      "f1_score": 0.6172839506172839,
+      "roc_auc": 0.8355253300266089,
+      "confusion_matrix": {
+        "left_and_caught": 275,
+        "left_and_missed": 99,
+        "stayed_and_flagged": 242,
+        "stayed_and_not_flagged": 793
+      },
+      "confusion_sentence": "Of 374 customers who left, caught 275; flagged 242 customers who stayed (out of 1035)."
+    },
+    "random_forest_unweighted": {
+      "accuracy": 0.8069552874378992,
+      "precision": 0.6746575342465754,
+      "recall": 0.5267379679144385,
+      "f1_score": 0.5915915915915916,
+      "roc_auc": 0.8401831615386601,
+      "confusion_matrix": {
+        "left_and_caught": 197,
+        "left_and_missed": 177,
+        "stayed_and_flagged": 95,
+        "stayed_and_not_flagged": 940
+      },
+      "confusion_sentence": "Of 374 customers who left, caught 197; flagged 95 customers who stayed (out of 1035)."
+    }
+  }
+}

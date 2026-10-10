@@ -11,9 +11,7 @@ st.set_page_config(
 from pathlib import Path
 import sys
 
-import numpy as np
 import pandas as pd
-import streamlit as st
 
 
 # Make project root importable when running: streamlit run dashboard/app.py
@@ -21,7 +19,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
 	sys.path.insert(0, str(ROOT_DIR))
 
-from src.predict import predict_customer, load_model, preprocess_input
+from src.predict import predict_customer, load_model, top_features
 
 
 DEFAULT_INPUTS = {
@@ -60,36 +58,20 @@ def reset_form_state() -> None:
 		st.session_state[key] = value
 
 
-def get_top_feature_impacts(input_data: dict, top_n: int = 5) -> tuple[pd.DataFrame, str]:
-	"""Return top feature impacts for a single prediction.
+def get_top_features(top_n: int = 5) -> tuple[pd.DataFrame, str]:
+	"""Return the features the saved model relies on most overall.
 
-	Uses model feature importances weighted by the absolute transformed feature value
-	for the current input row to approximate which features most affected the score.
+	These describe the model as a whole, not this one customer.
 	"""
-	model, artifacts = load_model()
-	processed_input = preprocess_input(input_data, artifacts)
-
-	if not hasattr(model, "feature_importances_"):
-		return pd.DataFrame(), "Feature importance is unavailable for this model type."
-
-	feature_names = list(processed_input.columns)
-	importances = np.array(model.feature_importances_, dtype=float)
-	row_values = np.abs(processed_input.iloc[0].to_numpy(dtype=float))
-
-	impact_scores = importances * row_values
-	if np.allclose(impact_scores, 0):
-		impact_scores = importances
-
+	importance_df = top_features(load_model(), top_n=top_n)
 	importance_df = pd.DataFrame(
 		{
-			"Feature": feature_names,
-			"Impact": impact_scores,
+			"Feature": importance_df["feature"],
+			"Impact": importance_df["weight"].abs(),
 		}
 	)
 
-	importance_df = importance_df.sort_values("Impact", ascending=False).head(top_n)
-
-	return importance_df, "Approximate impact based on model importance and this customer's transformed values."
+	return importance_df, "What the model relies on most across all customers, not specific to this customer."
 
 
 def get_churn_reasons(input_data: dict, max_reasons: int = 3) -> list[str]:
@@ -136,12 +118,6 @@ def get_churn_reasons(input_data: dict, max_reasons: int = 3) -> list[str]:
 
 	return unique_reasons[:max_reasons]
 
-
-st.set_page_config(
-	page_title="Customer Churn Prediction",
-	page_icon="📊",
-	layout="wide",
-)
 
 st.markdown(
 	"""
@@ -294,7 +270,7 @@ if submit:
 		result = predict_customer(input_data)
 		churn_probability = float(result["probability"])
 		risk_level = result['risk_level']
-		top_features_df, impact_note = get_top_feature_impacts(input_data, top_n=5)
+		top_features_df, impact_note = get_top_features(top_n=5)
 		reasons = get_churn_reasons(input_data, max_reasons=3)
 
 		# Determine colors and emoji based on risk level
@@ -373,7 +349,7 @@ if submit:
 				st.bar_chart(chart_data)
 
 				for _, row in top_features_df.iterrows():
-					st.write(f"- {row['Feature']}: {row['ImpactPercent']:.1f}% influence")
+					st.write(f"- {row['Feature']}: {row['ImpactPercent']:.1f}% of the top 5")
 
 				st.caption(impact_note)
 			else:
